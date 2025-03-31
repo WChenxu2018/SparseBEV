@@ -73,7 +73,7 @@ class SparseBEVTransformerDecoder(BaseModule):
         for lvl, feat in enumerate(mlvl_feats):
             B, TN, GC, H, W = feat.shape  # [B, TN, GC, H, W]
             N, T, G, C = 6, TN // 6, 4, GC // 4
-            feat = feat.reshape(B, T, N, G, C, H, W)
+            feat = feat.reshape(B, T, N, G, C, H, W) #torch.Size([1, 8, 6, 4, 64, 16, 44])
 
             if MSMV_CUDA:  # Our CUDA operator requires channel_last
                 feat = feat.permute(0, 1, 3, 2, 5, 6, 4)  # [B, T, G, N, H, W, C]
@@ -86,9 +86,9 @@ class SparseBEVTransformerDecoder(BaseModule):
 
         for i in range(self.num_layers):
             DUMP.stage_count = i
-
+            #这个地方attn_mask虽然不是bool，但是后续操作会将这个float加和到attention上
             query_feat, cls_score, bbox_pred = self.decoder_layer(
-                query_bbox, query_feat, mlvl_feats, attn_mask, img_metas
+                query_bbox, query_feat, mlvl_feats, attn_mask, img_metas #torch.Size([1, 900, 10]) torch.Size([1, 900, 256])
             )
             query_bbox = bbox_pred.clone().detach()
 
@@ -163,13 +163,13 @@ class SparseBEVTransformerDecoderLayer(BaseModule):
         """
         query_bbox: [B, Q, 10] [cx, cy, cz, w, h, d, rot.sin, rot.cos, vx, vy]
         """
-        query_pos = self.position_encoder(query_bbox[..., :3])
-        query_feat = query_feat + query_pos
+        query_pos = self.position_encoder(query_bbox[..., :3]) #query_pos: torch.Size([1, 900, 256])
+        query_feat = query_feat + query_pos #query_feat: torch.Size([1, 900, 256])
 
-        query_feat = self.norm1(self.self_attn(query_bbox, query_feat, attn_mask))
-        sampled_feat = self.sampling(query_bbox, query_feat, mlvl_feats, img_metas)
-        query_feat = self.norm2(self.mixing(sampled_feat, query_feat))
-        query_feat = self.norm3(self.ffn(query_feat))
+        query_feat = self.norm1(self.self_attn(query_bbox, query_feat, attn_mask))#query_feat: torch.Size([1, 900, 256])
+        sampled_feat = self.sampling(query_bbox, query_feat, mlvl_feats, img_metas) #query_bbox: torch.Size([1, 900, 10]) query_feat: torch.Size([1, 900, 256])
+        query_feat = self.norm2(self.mixing(sampled_feat, query_feat)) #sampled_feat:torch.Size([1, 900, 4, 32, 64]), torch.Size([1, 900, 256])
+        query_feat = self.norm3(self.ffn(query_feat)) #torch.Size([1, 900, 256])
 
         cls_score = self.cls_branch(query_feat)  # [B, Q, num_classes]
         bbox_pred = self.reg_branch(query_feat)  # [B, Q, code_size]
@@ -212,20 +212,20 @@ class SparseBEVSelfAttention(BaseModule):
         query_bbox: [B, Q, 10]
         query_feat: [B, Q, C]
         """
-        dist = self.calc_bbox_dists(query_bbox)
+        dist = self.calc_bbox_dists(query_bbox) #torch.Size([1, 900, 10]) -> torch.Size([1, 900, 900]) 看起来是计算每两个bbox之间的距离
         tau = self.gen_tau(query_feat)  # [B, Q, 8]
 
         if DUMP.enabled:
             torch.save(tau.cpu(), '{}/sasa_tau_stage{}.pth'.format(DUMP.out_dir, DUMP.stage_count))
 
-        tau = tau.permute(0, 2, 1)  # [B, 8, Q]
-        attn_mask = dist[:, None, :, :] * tau[..., None]  # [B, 8, Q, Q]
+        tau = tau.permute(0, 2, 1)  # [B, 8, Q] torch.Size([1, 8, 900])
+        attn_mask = dist[:, None, :, :] * tau[..., None]  # [B, 8, Q, Q] torch.Size([1, 1, 900, 900])*torch.Size([1, 8, 900, 1]) = torch.Size([1, 8, 900, 900]) [B, HEAD, Q, Q]
 
         if pre_attn_mask is not None:  # for query denoising
             attn_mask[:, :, pre_attn_mask] = float('-inf')
 
         attn_mask = attn_mask.flatten(0, 1)  # [Bx8, Q, Q]
-        return self.attention(query_feat, attn_mask=attn_mask)
+        return self.attention(query_feat, attn_mask=attn_mask) #torch.Size([1, 900, 256]) torch.Size([8, 900, 900])
 
     def forward(self, query_bbox, query_feat, pre_attn_mask):
         if self.training and query_feat.requires_grad:
@@ -276,11 +276,11 @@ class SparseBEVSampling(BaseModule):
         image_h, image_w, _ = img_metas[0]['img_shape'][0]
 
         # sampling offset of all frames
-        sampling_offset = self.sampling_offset(query_feat)
-        sampling_offset = sampling_offset.view(B, Q, self.num_groups * self.num_points, 3)
-        sampling_points = make_sample_points(query_bbox, sampling_offset, self.pc_range)  # [B, Q, GP, 3]
-        sampling_points = sampling_points.reshape(B, Q, 1, self.num_groups, self.num_points, 3)
-        sampling_points = sampling_points.expand(B, Q, self.num_frames, self.num_groups, self.num_points, 3)
+        sampling_offset = self.sampling_offset(query_feat) #torch.Size([1, 900, 256])->torch.Size([1, 900, 48])
+        sampling_offset = sampling_offset.view(B, Q, self.num_groups * self.num_points, 3) #torch.Size([1, 900, 16, 3])
+        sampling_points = make_sample_points(query_bbox, sampling_offset, self.pc_range)  # [B, Q, GP, 3] #做了一次偏移 #torch.Size([1, 900, 16, 3])
+        sampling_points = sampling_points.reshape(B, Q, 1, self.num_groups, self.num_points, 3) #torch.Size([1, 900, 16, 3])
+        sampling_points = sampling_points.expand(B, Q, self.num_frames, self.num_groups, self.num_points, 3) #torch.Size([1, 900, 8, 4, 4, 3])
 
         # warp sample points based on velocity
         time_diff = img_metas[0]['time_diff']  # [B, F]
@@ -292,12 +292,12 @@ class SparseBEVSampling(BaseModule):
         sampling_points = torch.cat([
             sampling_points[..., 0:2] - dist,
             sampling_points[..., 2:3]
-        ], dim=-1)
+        ], dim=-1) #torch.Size([1, 900, 8, 4, 4, 3])
 
         # scale weights
         scale_weights = self.scale_weights(query_feat).view(B, Q, self.num_groups, 1, self.num_points, self.num_levels)
         scale_weights = torch.softmax(scale_weights, dim=-1)
-        scale_weights = scale_weights.expand(B, Q, self.num_groups, self.num_frames, self.num_points, self.num_levels)
+        scale_weights = scale_weights.expand(B, Q, self.num_groups, self.num_frames, self.num_points, self.num_levels) #torch.Size([1, 900, 4, 8, 4, 4])
 
         # sampling
         sampled_feats = sampling_4d(
@@ -308,7 +308,7 @@ class SparseBEVSampling(BaseModule):
             image_h, image_w
         )  # [B, Q, G, FP, C]
 
-        return sampled_feats
+        return sampled_feats #torch.Size([1, 900, 4, 32, 64])
 
     def forward(self, query_bbox, query_feat, mlvl_feats, img_metas):
         if self.training and query_feat.requires_grad:

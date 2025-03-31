@@ -57,7 +57,7 @@ class SparseBEVHead(DETRHead):
         grid_size = int(math.sqrt(self.num_query))
         assert grid_size * grid_size == self.num_query
         x = y = torch.arange(grid_size)
-        xx, yy = torch.meshgrid(x, y, indexing='ij')  # [0, grid_size - 1]
+        xx, yy = torch.meshgrid(x, y)  # [0, grid_size - 1]
         xy = torch.cat([xx[..., None], yy[..., None]], dim=-1)
         xy = (xy + 0.5) / grid_size  # [0.5, grid_size - 0.5] / grid_size ~= (0, 1)
         with torch.no_grad():
@@ -67,17 +67,17 @@ class SparseBEVHead(DETRHead):
         self.transformer.init_weights()
 
     def forward(self, mlvl_feats, img_metas):
-        query_bbox = self.init_query_bbox.weight.clone()  # [Q, 10]
+        query_bbox = self.init_query_bbox.weight.clone()  # [Q, 10] torch.Size([900, 10])
         #query_bbox[..., :3] = query_bbox[..., :3].sigmoid()
 
         # query denoising
         B = mlvl_feats[0].shape[0]
-        query_bbox, query_feat, attn_mask, mask_dict = self.prepare_for_dn_input(B, query_bbox, self.label_enc, img_metas)
+        query_bbox, query_feat, attn_mask, mask_dict = self.prepare_for_dn_input(B, query_bbox, self.label_enc, img_metas) #self.label_enc
 
         cls_scores, bbox_preds = self.transformer(
-            query_bbox,
-            query_feat,
-            mlvl_feats,
+            query_bbox, #torch.Size([1, 900, 10])
+            query_feat, #torch.Size([1, 900, 256])
+            mlvl_feats, # 4* torch.Size([1, 48, 256, 64, 176])
             attn_mask=attn_mask,
             img_metas=img_metas,
         )

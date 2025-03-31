@@ -1,15 +1,15 @@
 import torch
 import torch.nn.functional as F
 
-try:
-    from ._msmv_sampling_cuda import _ms_deform_attn_cuda_c2345_forward, _ms_deform_attn_cuda_c2345_backward
-    from ._msmv_sampling_cuda import _ms_deform_attn_cuda_c23456_forward, _ms_deform_attn_cuda_c23456_backward
-    MSMV_CUDA = True
-except ImportError as e:
-    print('Warning: failed to load one or more CUDA extensions, performance may be hurt.')
-    print('Error message:', e)
-    MSMV_CUDA = False
-
+# try:
+#     from ._msmv_sampling_cuda import _ms_deform_attn_cuda_c2345_forward, _ms_deform_attn_cuda_c2345_backward
+#     from ._msmv_sampling_cuda import _ms_deform_attn_cuda_c23456_forward, _ms_deform_attn_cuda_c23456_backward
+#     MSMV_CUDA = True
+# except ImportError as e:
+#     print('Warning: failed to load one or more CUDA extensions, performance may be hurt.')
+#     print('Error message:', e)
+#     MSMV_CUDA = False
+MSMV_CUDA = False
 
 def msmv_sampling_pytorch(mlvl_feats, sampling_locations, scale_weights):
     """
@@ -28,7 +28,7 @@ def msmv_sampling_pytorch(mlvl_feats, sampling_locations, scale_weights):
     final = torch.zeros([B, C, Q, P], device=mlvl_feats[0].device)
 
     for lvl, feat in enumerate(mlvl_feats):
-        out = F.grid_sample(
+        out = F.grid_sample( #feat: torch.Size([32, 64, 6, 64, 176]) torch.Size([32, 900, 4, 1, 3])
             feat, sampling_locations, mode='bilinear',
             padding_mode='zeros', align_corners=True,
         )[..., 0]  # [B, C, Q, P]
@@ -85,9 +85,9 @@ class MSMVSamplingC23456(torch.autograd.Function):
 
 
 def msmv_sampling(mlvl_feats, sampling_locations, scale_weights):
-    if len(mlvl_feats) == 4 and MSMV_CUDA:
-        return MSMVSamplingC2345.apply(*mlvl_feats, sampling_locations, scale_weights)
-    elif len(mlvl_feats) == 5 and MSMV_CUDA:
-        return MSMVSamplingC23456.apply(*mlvl_feats, sampling_locations, scale_weights)
-    else:
-        return msmv_sampling_pytorch(mlvl_feats, sampling_locations, scale_weights)
+    # if len(mlvl_feats) == 4 and MSMV_CUDA:
+    #     return MSMVSamplingC2345.apply(*mlvl_feats, sampling_locations, scale_weights)
+    # elif len(mlvl_feats) == 5 and MSMV_CUDA:
+    #     return MSMVSamplingC23456.apply(*mlvl_feats, sampling_locations, scale_weights)
+    # else:
+    return msmv_sampling_pytorch(mlvl_feats, sampling_locations, scale_weights)

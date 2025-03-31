@@ -5,7 +5,7 @@ from .utils import rotation_3d_in_axis, DUMP
 from .csrc.wrapper import msmv_sampling, msmv_sampling_pytorch
 
 
-def make_sample_points(query_bbox, offset, pc_range):
+def make_sample_points(query_bbox, offset, pc_range): #offset: torch.Size([1, 900, 16, 3])
     '''
     query_bbox: [B, Q, 10]
     offset: [B, Q, num_points, 4], normalized by stride
@@ -17,8 +17,8 @@ def make_sample_points(query_bbox, offset, pc_range):
     ang = query_bbox[..., 6:7]  # [B, Q, 1]
 
     delta_xyz = offset[..., 0:3]  # [B, Q, P, 3]
-    delta_xyz = wlh[:, :, None, :] * delta_xyz  # [B, Q, P, 3]
-    delta_xyz = rotation_3d_in_axis(delta_xyz, ang)  # [B, Q, P, 3]
+    delta_xyz = wlh[:, :, None, :] * delta_xyz  # [B, Q, P, 3] 
+    delta_xyz = rotation_3d_in_axis(delta_xyz, ang)  # [B, Q, P, 3] #torch.Size([1, 900, 16, 3])
     sample_xyz = xyz[:, :, None, :] + delta_xyz  # [B, Q, P, 3]
 
     return sample_xyz  # [B, Q, P, 3]
@@ -44,7 +44,7 @@ def sampling_4d(sample_points, mlvl_feats, scale_weights, lidar2img, image_h, im
     B, Q, T, G, P, _ = sample_points.shape  # [B, Q, T, G, P, 3]
     N = 6
     
-    sample_points = sample_points.reshape(B, Q, T, G * P, 3)
+    sample_points = sample_points.reshape(B, Q, T, G * P, 3) #torch.Size([1, 900, 8, 16, 3])
 
     # get the projection matrix
     lidar2img = lidar2img[:, :, None, None, :, :]  # [B, TN, 1, 1, 4, 4]
@@ -56,7 +56,7 @@ def sampling_4d(sample_points, mlvl_feats, scale_weights, lidar2img, image_h, im
     sample_points = torch.cat([sample_points, ones], dim=-1)  # [B, Q, GP, 4]
     sample_points = sample_points[:, :, None, ..., None]     # [B, Q, T, GP, 4]
     sample_points = sample_points.expand(B, Q, N, T, G * P, 4, 1)
-    sample_points = sample_points.transpose(1, 3)   # [B, T, N, Q, GP, 4, 1]
+    sample_points = sample_points.transpose(1, 3)   # [B, T, N, Q, GP, 4, 1] torch.Size([1, 8, 6, 900, 16, 4, 1])
 
     # project 3d sampling points to N views
     sample_points_cam = torch.matmul(lidar2img, sample_points).squeeze(-1)  # [B, T, N, Q, GP, 4]
@@ -111,15 +111,15 @@ def sampling_4d(sample_points, mlvl_feats, scale_weights, lidar2img, image_h, im
     # reorganize the tensor to stack T and G to the batch dim for better parallelism
     sample_points_cam = sample_points_cam.reshape(B, T, Q, G, P, 1, 3)
     sample_points_cam = sample_points_cam.permute(0, 1, 3, 2, 4, 5, 6)  # [B, T, G, Q, P, 1, 3]
-    sample_points_cam = sample_points_cam.reshape(B*T*G, Q, P, 3)
+    sample_points_cam = sample_points_cam.reshape(B*T*G, Q, P, 3) #torch.Size([32, 900, 4, 3])
 
     # reorganize the tensor to stack T and G to the batch dim for better parallelism
     scale_weights = scale_weights.reshape(B, Q, G, T, P, -1)
     scale_weights = scale_weights.permute(0, 2, 3, 1, 4, 5)
-    scale_weights = scale_weights.reshape(B*G*T, Q, P, -1)
+    scale_weights = scale_weights.reshape(B*G*T, Q, P, -1) # torch.Size([32, 900, 4, 4])
 
     # multi-scale multi-view grid sample
-    final = msmv_sampling(mlvl_feats, sample_points_cam, scale_weights)
+    final = msmv_sampling(mlvl_feats, sample_points_cam, scale_weights) #理解类似于做deformable crossattention #torch.Size([32, 900, 64, 4])
 
     # reorganize the sampled features
     C = final.shape[2]  # [BTG, Q, C, P]

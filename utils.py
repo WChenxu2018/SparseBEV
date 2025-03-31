@@ -8,7 +8,7 @@ import datetime
 from mmcv.runner.hooks import HOOKS
 from mmcv.runner.hooks.logger import LoggerHook, TextLoggerHook
 from mmcv.runner.dist_utils import master_only
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
 
 def init_logging(filename=None, debug=False):
@@ -139,9 +139,9 @@ class MyTensorboardLoggerHook(LoggerHook):
     @master_only
     def before_run(self, runner):
         super(MyTensorboardLoggerHook, self).before_run(runner)
-        if self.log_dir is None:
-            self.log_dir = runner.work_dir
-        self.writer = SummaryWriter(self.log_dir)
+        # if self.log_dir is None:
+        #     self.log_dir = runner.work_dir
+        # self.writer = SummaryWriter(self.log_dir)
 
     @master_only
     def log(self, runner):

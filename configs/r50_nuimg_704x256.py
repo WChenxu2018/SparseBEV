@@ -152,7 +152,7 @@ test_pipeline = [
 ]
 
 data = dict(
-    workers_per_gpu=8,
+    workers_per_gpu=1,
     train=dict(
         type=dataset_type,
         data_root=dataset_root,
@@ -209,9 +209,9 @@ lr_config = dict(
 )
 total_epochs = 24
 batch_size = 8
-
+load_from = None
 # load pretrained weights
-load_from = 'pretrain/cascade_mask_rcnn_r50_fpn_coco-20e_20e_nuim_20201009_124951-40963960.pth'
+# load_from = 'pretrain/cascade_mask_rcnn_r50_fpn_coco-20e_20e_nuim_20201009_124951-40963960.pth'
 revise_keys = [('backbone', 'img_backbone')]
 
 # resume the last training

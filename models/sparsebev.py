@@ -48,7 +48,7 @@ class SparseBEV(MVXTwoStageDetector):
         if self.use_grid_mask:
             img = self.grid_mask(img)
 
-        img_feats = self.img_backbone(img)
+        img_feats = self.img_backbone(img)#torch.Size([6, 3, 256, 704]) -> torch.Size([6, 256, 64, 176]) torch.Size([6, 512, 32, 88]) torch.Size([6, 1024, 16, 44])torch.Size([6, 2048, 8, 22])
 
         if isinstance(img_feats, dict):
             img_feats = list(img_feats.values())
@@ -56,7 +56,7 @@ class SparseBEV(MVXTwoStageDetector):
         if self.with_img_neck:
             img_feats = self.img_neck(img_feats)
 
-        return img_feats
+        return img_feats #torch.Size([6, 256, 64, 176]) torch.Size([6, 256, 32, 88]) torch.Size([6, 256, 16, 44]) torch.Size([6, 256, 8, 22])
 
     def extract_feat(self, img, img_metas):
         if isinstance(img, list):
