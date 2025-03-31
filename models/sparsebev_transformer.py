@@ -168,7 +168,7 @@ class SparseBEVTransformerDecoderLayer(BaseModule):
 
         query_feat = self.norm1(self.self_attn(query_bbox, query_feat, attn_mask))#query_feat: torch.Size([1, 900, 256])
         sampled_feat = self.sampling(query_bbox, query_feat, mlvl_feats, img_metas) #query_bbox: torch.Size([1, 900, 10]) query_feat: torch.Size([1, 900, 256])
-        query_feat = self.norm2(self.mixing(sampled_feat, query_feat)) #sampled_feat:torch.Size([1, 900, 4, 32, 64]), torch.Size([1, 900, 256])
+        query_feat = self.norm2(self.mixing(sampled_feat, query_feat)) #sampled_feat:torch.Size([1, 900, 4, 32, 64]) [B, Q, G, P*T, D], query_feat: torch.Size([1, 900, 256])
         query_feat = self.norm3(self.ffn(query_feat)) #torch.Size([1, 900, 256])
 
         cls_score = self.cls_branch(query_feat)  # [B, Q, num_classes]
@@ -280,7 +280,7 @@ class SparseBEVSampling(BaseModule):
         sampling_offset = sampling_offset.view(B, Q, self.num_groups * self.num_points, 3) #torch.Size([1, 900, 16, 3])
         sampling_points = make_sample_points(query_bbox, sampling_offset, self.pc_range)  # [B, Q, GP, 3] #做了一次偏移 #torch.Size([1, 900, 16, 3])
         sampling_points = sampling_points.reshape(B, Q, 1, self.num_groups, self.num_points, 3) #torch.Size([1, 900, 16, 3])
-        sampling_points = sampling_points.expand(B, Q, self.num_frames, self.num_groups, self.num_points, 3) #torch.Size([1, 900, 8, 4, 4, 3])
+        sampling_points = sampling_points.expand(B, Q, self.num_frames, self.num_groups, self.num_points, 3) #torch.Size([1, 900, 8, 4, 4, 3]) [B, QUERY, T, G, P, 3]
 
         # warp sample points based on velocity
         time_diff = img_metas[0]['time_diff']  # [B, F]
@@ -288,11 +288,11 @@ class SparseBEVSampling(BaseModule):
         vel = query_bbox[..., 8:].detach()  # [B, Q, 2]
         vel = vel[:, :, None, :]  # [B, Q, 1, 2]
         dist = vel * time_diff  # [B, Q, F, 2]
-        dist = dist[:, :, :, None, None, :]  # [B, Q, F, 1, 1, 2]
+        dist = dist[:, :, :, None, None, :]  # [B, Q, F, 1, 1, 2] torch.Size([1, 900, 8, 1, 1, 2]) 8:frame 2:xy
         sampling_points = torch.cat([
-            sampling_points[..., 0:2] - dist,
-            sampling_points[..., 2:3]
-        ], dim=-1) #torch.Size([1, 900, 8, 4, 4, 3])
+            sampling_points[..., 0:2] - dist, #torch.Size([1, 900, 8, 4, 4, 2])
+            sampling_points[..., 2:3] #torch.Size([1, 900, 8, 4, 4, 1])
+        ], dim=-1) #torch.Size([1, 900, 8, 4, 4, 3]) #利用检测物体的速度信息做了时序的补偿
 
         # scale weights
         scale_weights = self.scale_weights(query_feat).view(B, Q, self.num_groups, 1, self.num_points, self.num_levels)
@@ -355,13 +355,13 @@ class AdaptiveMixing(nn.Module):
         assert C == self.eff_in_dim
 
         '''generate mixing parameters'''
-        params = self.parameter_generator(query)
-        params = params.reshape(B*Q, G, -1)
-        out = x.reshape(B*Q, G, P, C)
+        params = self.parameter_generator(query) #torch.Size([1, 900, 256]) -> torch.Size([1, 900, 32768])
+        params = params.reshape(B*Q, G, -1) #params: torch.Size([900, 4, 8192])
+        out = x.reshape(B*Q, G, P, C) #out: torch.Size([900, 4, 32, 64])
 
         M, S = params.split([self.m_parameters, self.s_parameters], 2)
-        M = M.reshape(B*Q, G, self.eff_in_dim, self.eff_out_dim)
-        S = S.reshape(B*Q, G, self.out_points, self.in_points)
+        M = M.reshape(B*Q, G, self.eff_in_dim, self.eff_out_dim) #torch.Size([900, 4, 64, 64])
+        S = S.reshape(B*Q, G, self.out_points, self.in_points) #torch.Size([900, 4, 128, 32])
 
         '''adaptive channel mixing'''
         out = torch.matmul(out, M)
